@@ -1,9 +1,8 @@
 import os
 import smtplib
-from datetime import date
+from datetime import date, datetime
 from functools import wraps
 from flask import Flask, render_template, redirect, url_for, flash, request
-from flask_bootstrap import Bootstrap
 from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
 from flask_login import UserMixin, login_user, LoginManager, login_required, current_user, logout_user
@@ -11,9 +10,8 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_wtf.csrf import CSRFProtect
 
-from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm, ContactForm
+from forms import CommentForm, RegisterForm, ContactForm, CreatePostForm
 
 Base = declarative_base()
 
@@ -21,7 +19,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = '8BYkEfBA6O6donzWlSihBXox7C0sKR6b'
 ckeditor = CKEditor(app)
 app.app_context().push()
-Bootstrap(app)
 gravatar = Gravatar(app, size=100, rating='g', default='retro', force_default=False,
                     force_lower=False, use_ssl=False, base_url=None)
 
@@ -33,9 +30,6 @@ login_manager.init_app(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blog.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-csrf = CSRFProtect()
-csrf.init_app(app)
 
 
 @login_manager.user_loader
@@ -61,6 +55,7 @@ class BlogPost(db.Model, Base):
     poster_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     title = db.Column(db.String(250), unique=True, nullable=False)
     subtitle = db.Column(db.String(250), nullable=False)
+    tag = db.Column(db.String(250), nullable=False)
     date = db.Column(db.String(250), nullable=False)
     body = db.Column(db.Text(), nullable=False)
     img_url = db.Column(db.String(250), nullable=False)
@@ -149,16 +144,7 @@ def logged_in(func):
 @app.route('/')
 def get_all_posts():
     posts = BlogPost.query.all()
-    admin = False
-
-    try:
-        name = current_user.username
-        if current_user.id == 1:
-            admin = True
-    except:
-        name = 'annonymous'
-    return render_template("index.html", Name=name, all_posts=posts, logged_in=current_user.is_authenticated,
-                           admin=admin)
+    return render_template("index.html", all_posts=posts)
 
 
 @app.route("/post/<int:post_id>", methods=['GET', 'POST'])
@@ -187,47 +173,57 @@ def show_post(post_id):
 @app.route('/login', methods=['GET', 'POST'])
 @logged_in
 def login():
-    form = LoginForm(request.form)
     if request.method == 'POST':
-        if form.validate_on_submit():
-            user = User.query.filter_by(email=form.email.data.replace(" ", "")).first()
-            if user:
-                if check_password_hash(user.password, form.password.data):
-                    login_user(user)
-                    return redirect(url_for('get_all_posts'))
-                else:
-                    flash('Error: Invalid username or password.')
-                    return render_template('login.html', form=form)
+        username = request.form.get('username')
+        password = request.form.get('password')
+        remember_me = request.form.get('rememberMe') == 'on'  # Convert to boolean
+        user = User.query.filter_by(username=username).first()
+        if user:
+            if check_password_hash(user.password, password):
+                login_user(user, remember=remember_me)
+                return redirect(url_for('get_all_posts'))
             else:
-                flash('Error: Invalid username or password.')
-                return render_template('login.html', form=form)
+                flash('Incorrect username or incorrect password.', 'error')
+                return redirect(url_for('login'))
         else:
-            flash('Error: All fields are required.')
-            return render_template('login.html', form=form)
-    return render_template("login.html", form=form)
+            flash('Incorrect username or incorrect password.', 'error')
+            return redirect(url_for('login'))
+
+    return render_template("login.html")
 
 
 @app.route('/register', methods=['GET', 'POST'])
-@logged_in
 def register():
     if request.method == 'POST':
-        form = RegisterForm(request.form)
-        if form.validate():
-            if User.query.filter_by(email=form.email.data).first():
-                flash('Email address already registered.')
-                return redirect(url_for('register'))
-            user = User()
-            user.username = form.username.data.replace(" ", "")
-            user.email = form.email.data.replace(" ", "")
-            user.password = generate_password_hash(form.password.data)
-            db.session.add(user)
-            db.session.commit()
-            login_user(user)
-            return redirect(url_for('get_all_posts', Name=current_user.username))
-        else:
-            return render_template('register.html', form=form)
-    form = RegisterForm()
-    return render_template("register.html", form=form)
+        email = request.form.get('email')
+        username = request.form.get('username')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+
+        # Check if the password and confirm_password match
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return redirect(url_for('register'))
+
+        # Check if the email is already registered
+        existing_user_mail = User.query.filter_by(email=email).first()
+        if existing_user_mail:
+            flash('Email already exists.', 'error')
+            return redirect(url_for('register'))
+        existing_user = User.query.filter_by(user=username).first()
+        if existing_user:
+            flash('Email already exists.', 'error')
+            return redirect(url_for('register'))
+
+        # Create a new user
+        new_user = User(email=email, username=username, password=generate_password_hash(password))
+        db.session.add(new_user)
+        db.session.commit()
+
+        flash('Registration successful. Please login.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('register.html')
 
 
 @app.route('/logout')
@@ -275,24 +271,35 @@ def contact():
         return render_template("contact.html", form=form, success=success)
 
 
-@app.route("/new-post", methods=['GET', 'POST'])
-@addminonly
-def add_new_post():
-    form = CreatePostForm()
-    if form.validate_on_submit():
-        new_post = BlogPost(
-            title=form.title.data,
-            subtitle=form.subtitle.data,
-            body=form.body.data,
-            img_url=form.img_url.data,
-            poster_id=current_user.id,
-            date=date.today().strftime("%B %d, %Y")
+# Route for creating a new blog post
+@app.route('/create_post', methods=['GET', 'POST'])
+def create_post():
+    if request.method == 'POST':
+        title = request.form.get('title')
+        subtitle = request.form.get('subtitle')
+        tag = request.form.get('tag')
+        body = request.form.get('body')
+        img_url = request.form.get('img_url')
+        # Assuming you have a logged-in user and you get the poster_id somehow
+        poster_id = current_user.id  # Replace with the actual poster_id
 
+        # Create a new BlogPost instance
+        new_post = BlogPost(
+            poster_id=poster_id,
+            title=title,
+            subtitle=subtitle,
+            tag=tag,
+            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            body=body,
+            img_url=img_url
         )
+        # Add the new post to the database
         db.session.add(new_post)
         db.session.commit()
-        return redirect(url_for("get_all_posts"))
-    return render_template("make-post.html", form=form)
+
+        return redirect(url_for('get_all_posts'))  # Redirect to the create_post route to clear the form
+
+    return render_template('create_post.html')
 
 
 @app.route("/edit-post/<int:post_id>", methods=['GET', 'POST'])
@@ -313,7 +320,7 @@ def edit_post(post_id):
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
 
-    return render_template("make-post.html", form=edit_form)
+    return render_template("create_post.html", form=edit_form)
 
 
 @app.route("/delete/<int:post_id>")
