@@ -1,6 +1,6 @@
 import os
 import smtplib
-from datetime import date, datetime
+from datetime import timedelta, datetime
 from functools import wraps
 from flask import Flask, render_template, redirect, url_for, flash, request
 from flask_ckeditor import CKEditor
@@ -11,7 +11,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from forms import CommentForm, RegisterForm, ContactForm, CreatePostForm
+from forms import CommentForm, ContactForm, CreatePostForm
 
 Base = declarative_base()
 
@@ -141,10 +141,29 @@ def logged_in(func):
     return decorated_function
 
 
+def format_time_elapsed(date_string):
+    # Convert date string to datetime object
+    date_time_obj = datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
+    # Calculate the time elapsed from the given date to the current date
+    time_elapsed = datetime.now() - date_time_obj
+    # Convert time elapsed to minutes
+    minutes_elapsed = int(time_elapsed.total_seconds() / 60)
+    # Return the formatted HTML string
+    return minutes_elapsed
+
+
+def format_date(date_string):
+    # Convert date string to datetime object
+    date_time_obj = datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
+    # Return the formatted HTML string
+    return date_string[:10]
+
+
 @app.route('/')
 def get_all_posts():
     posts = BlogPost.query.all()
-    return render_template("index.html", all_posts=posts)
+    return render_template("index.html", all_posts=posts,
+                           format_time_elapsed=format_time_elapsed,format_date=format_date)
 
 
 @app.route("/post/<int:post_id>", methods=['GET', 'POST'])

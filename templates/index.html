@@ -40,17 +40,17 @@
                 <div class="wrapper-flex">
 
                   <div class="profile-wrapper">
-                    <img src="{{ url_for('static',filename='assets/images/author.png') }}" alt="Julia Walker" width="50">
+                    <img src="https://ui-avatars.com//api/?background=%23285894&color=fff&rounded=True&size=200&name=MT" alt="Julia Walker" width="50">
                   </div>
 
                   <div class="wrapper">
                     <a href="#" class="h4">Mohamed Ali</a>
 
                     <p class="text-sm">
-                      <time datetime="2022-01-17">{{ post.date}}</time>
+                      <time datetime="2022-01-17">{{ format_date(post.date)}}</time>
                       <span class="separator"></span>
                       <ion-icon name="time-outline"></ion-icon>
-                      <time datetime="PT3M">3 min</time>
+                      <time datetime="PT3M">{{ format_time_elapsed(post.date) }} min</time>
                     </p>
                   </div>
 
